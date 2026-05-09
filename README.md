@@ -1,98 +1,199 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Candy Shop API
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+Backend API for candy shop sales management, built with NestJS, Prisma, and PostgreSQL.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## Overview
 
-## Description
+The API manages:
+- Authentication (`/auth`)
+- Users (`/users`)
+- Candies (`/candies`)
+- Sales sessions (`/sessions`)
+- Candy sales within a session (`SessionCandy` relation)
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+A session represents a selling period (event, shift, or sales day).
 
-## Project setup
+## Core Business Rules
 
-```bash
-$ pnpm install
+- Only one `OPEN` session can exist at a time.
+- New sessions start with:
+  - `status = OPEN`
+  - `totalSold = 0`
+  - `date = now`
+- Sales can be registered only while session is `OPEN`.
+- Closing a session:
+  - Computes `totalSold = SUM(quantitySold * candy.price)`
+  - Sets `status = CLOSED`
+- Closed sessions are immutable:
+  - Cannot add/update/remove sales
+  - Cannot close again
+  - Returns `403 Forbidden` with message `Session is already closed`
+- Candy price is stored in cents (e.g. `5.50 BRL => 550`).
+- `SessionCandy` has unique constraint on (`sessionId`, `candyId`) so repeated sales increment quantity instead of duplicating rows.
+
+## Tech Stack
+
+- NestJS
+- Prisma ORM
+- PostgreSQL
+- Jest
+- Docker + Docker Compose
+
+## Modules
+
+- `auth`
+- `users`
+- `candies`
+- `sessions`
+- `session-candies`
+- `prisma`
+- `common`
+
+## API Base URL
+
+All routes use global prefix:
+- `/api`
+
+Swagger docs:
+- `/api/docs`
+
+## Environment Variables
+
+Copy `.env.example` to `.env` and set:
+
+```env
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/candy_shop?schema=public
+JWT_SECRET=change-me
+PORT=3000
 ```
 
-## Compile and run the project
+## Local Development
 
 ```bash
-# development
-$ pnpm run start
-
-# watch mode
-$ pnpm run start:dev
-
-# production mode
-$ pnpm run start:prod
+pnpm install
+pnpm prisma generate
+pnpm prisma migrate dev
+pnpm start:dev
 ```
 
-## Run tests
+## Run with Docker
 
 ```bash
-# unit tests
-$ pnpm run test
-
-# e2e tests
-$ pnpm run test:e2e
-
-# test coverage
-$ pnpm run test:cov
+docker compose up --build
 ```
 
-## Deployment
+Services:
+- `backend` on port `3000`
+- `postgres` on port `5432` with persistent volume `postgres_data`
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+## Scripts
 
 ```bash
-$ pnpm install -g @nestjs/mau
-$ mau deploy
+pnpm build
+pnpm start
+pnpm start:dev
+pnpm start:prod
+pnpm lint
+pnpm test
+pnpm test:e2e
+pnpm test:cov
+pnpm prisma:generate
+pnpm prisma:migrate
+pnpm prisma:deploy
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+## Data Model Summary
 
-## Resources
+### User
+- `id` UUID
+- `name` string
+- `email` string unique
+- `password` hashed string
+- `createdAt` datetime
 
-Check out a few resources that may come in handy when working with NestJS:
+### Candy
+- `id` UUID
+- `name` string unique
+- `price` integer (cents)
+- `createdAt` datetime
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+### Session
+- `id` UUID
+- `totalSold` integer
+- `date` datetime
+- `status` enum: `OPEN | CLOSED`
+- `createdAt` datetime
 
-## Support
+### SessionCandy
+- `id` UUID
+- `sessionId` UUID FK
+- `candyId` UUID FK
+- `quantitySold` integer
+- unique (`sessionId`, `candyId`)
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+## Main Endpoints
 
-## Stay in touch
+### Auth
+- `POST /api/auth/register`
+- `POST /api/auth/login`
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+### Users (JWT protected)
+- `GET /api/users`
 
-## License
+### Candies (JWT protected)
+- `POST /api/candies`
+- `GET /api/candies`
+- `PATCH /api/candies/:id`
+- `DELETE /api/candies/:id`
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+### Sessions (JWT protected)
+- `POST /api/sessions`
+- `GET /api/sessions?status=OPEN|CLOSED`
+- `GET /api/sessions/open/current`
+- `GET /api/sessions/:id`
+- `POST /api/sessions/:id/sales`
+- `PATCH /api/sessions/:id/close`
+
+## Validation Rules
+
+Implemented with `class-validator`:
+- `quantity > 0`
+- `price > 0`
+- UUID validation where applicable
+- email validation
+- password minimum length `6`
+
+Global `ValidationPipe` is enabled with:
+- `whitelist: true`
+- `forbidNonWhitelisted: true`
+- `transform: true`
+
+## Error Handling
+
+Global HTTP exception filter standardizes response format, for example:
+
+```json
+{
+  "statusCode": 403,
+  "message": "Session is already closed",
+  "error": "Forbidden"
+}
+```
+
+## Testing Coverage (Current)
+
+Current unit tests include:
+- `AuthService` (register/login flows, password hashing)
+- `CandiesService` (create/update/duplicate protection/delete protection)
+- `SessionsService`:
+  - single open session rule
+  - sale quantity increment behavior
+  - close session total calculation
+  - closed session protections
+  - session detail subtotals
+
+Run:
+
+```bash
+pnpm test
+```

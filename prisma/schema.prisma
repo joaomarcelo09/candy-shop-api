@@ -1,0 +1,56 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum SessionStatus {
+  OPEN
+  CLOSED
+}
+
+model User {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  email     String   @unique
+  password  String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("users")
+}
+
+model Candy {
+  id             String         @id @default(uuid()) @db.Uuid
+  name           String         @unique
+  price          Int
+  createdAt      DateTime       @default(now()) @map("created_at")
+  sessionCandies SessionCandy[]
+
+  @@map("candies")
+}
+
+model Session {
+  id             String         @id @default(uuid()) @db.Uuid
+  totalSold      Int            @default(0) @map("total_sold")
+  date           DateTime       @default(now())
+  status         SessionStatus
+  createdAt      DateTime       @default(now()) @map("created_at")
+  sessionCandies SessionCandy[]
+
+  @@map("sessions")
+}
+
+model SessionCandy {
+  id           String  @id @default(uuid()) @db.Uuid
+  sessionId    String  @map("session_id") @db.Uuid
+  candyId      String  @map("candy_id") @db.Uuid
+  quantitySold Int     @map("quantity_sold")
+  session      Session @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  candy        Candy   @relation(fields: [candyId], references: [id], onDelete: Restrict)
+
+  @@unique([sessionId, candyId])
+  @@map("session_candies")
+}

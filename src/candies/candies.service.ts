@@ -50,11 +50,14 @@ export class CandiesService {
   async remove(id: string) {
     await this.findByIdOrFail(id);
 
-    const usageCount = await this.prisma.sessionCandy.count({
+    const legacyUsageCount = await this.prisma.sessionCandy.count({
+      where: { candyId: id },
+    });
+    const orderUsageCount = await this.prisma.orderCandy.count({
       where: { candyId: id },
     });
 
-    if (usageCount > 0) {
+    if (legacyUsageCount > 0 || orderUsageCount > 0) {
       throw new BadRequestException('Candy cannot be deleted because it has sales history');
     }
 

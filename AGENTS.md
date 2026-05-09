@@ -10,15 +10,17 @@ Maintain a consistent, testable backend for candy sales sessions with strict imm
 
 - Exactly one `OPEN` session at a time.
 - Session starts with `totalSold = 0`.
-- Sales allowed only in `OPEN` session.
+- Order creation and order deletion allowed only in `OPEN` session.
+- A session order may contain multiple candies.
 - Closing a session computes and persists `totalSold`.
 - `CLOSED` sessions are immutable.
-- `SessionCandy` must be unique per (`sessionId`, `candyId`) and increment `quantitySold` on repeated sales.
+- `Session.totalSold` and session summary items must always be derivable from `SessionOrder` + `OrderCandy`.
+- `OrderCandy.unitPriceSnapshot` is required for historical price stability.
 
 ## Architecture Rules
 
 - Keep modular separation:
-  - `auth`, `users`, `candies`, `sessions`, `session-candies`, `prisma`, `common`.
+  - `auth`, `users`, `candies`, `sessions`, `session-orders`, `prisma`, `common`.
 - Use controller/service pattern.
 - Keep Prisma access in services only.
 - Reuse `PrismaService` from `prisma` module.
@@ -30,7 +32,8 @@ Maintain a consistent, testable backend for candy sales sessions with strict imm
 
 - Monetary values are integers in cents.
 - Never store or compute money as floating point.
-- `totalSold` must always be recomputable from `SessionCandy` + `Candy.price`.
+- `totalSold` must always be recomputable from `OrderCandy.quantity * OrderCandy.unitPriceSnapshot`.
+- Session detail aggregation must not depend on the current `Candy.price`.
 
 ## Error Contract
 
@@ -56,8 +59,10 @@ Preserve meaningful messages already used by services.
 Every behavior change must include/update Jest tests.
 Prioritize tests for:
 - session lifecycle
-- sale increment vs duplicate creation
+- multi-item order creation
+- open-session-only order deletion
 - total calculation
+- price snapshot stability
 - immutable closed session
 - auth and validation regressions
 
@@ -66,7 +71,8 @@ Prioritize tests for:
 - Update `prisma/schema.prisma` first for data model changes.
 - Generate and apply migrations consistently.
 - Keep relation names and mapped column names coherent.
-- Respect `@@unique([sessionId, candyId])` in `SessionCandy`.
+- New writes must go through `SessionOrder` and `OrderCandy`, not `SessionCandy`.
+- If touching historical compatibility, treat `SessionCandy` as legacy/backfill-only data.
 
 ## Docker and Runtime Rules
 
@@ -81,3 +87,4 @@ Prioritize tests for:
 - Swagger remains accessible and accurate.
 - Business rules above remain enforced.
 - No regressions in session immutability.
+- Session summaries and close totals come from order data with price snapshots.

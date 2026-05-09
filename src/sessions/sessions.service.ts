@@ -5,18 +5,16 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { SessionStatus } from '@prisma/client';
-import { CandiesService } from '../candies/candies.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { SessionCandiesService } from '../session-candies/session-candies.service';
+import { SessionOrdersService } from '../session-orders/session-orders.service';
+import { CreateSessionOrderDto } from './dto/create-session-order.dto';
 import { ListSessionsQueryDto } from './dto/list-sessions-query.dto';
-import { RegisterSaleDto } from './dto/register-sale.dto';
 
 @Injectable()
 export class SessionsService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly candiesService: CandiesService,
-    private readonly sessionCandiesService: SessionCandiesService,
+    private readonly sessionOrdersService: SessionOrdersService,
   ) {}
 
   async create() {
@@ -59,70 +57,59 @@ export class SessionsService {
   }
 
   async findOne(id: string) {
-    const session = await this.prisma.session.findUnique({
-      where: { id },
-    });
-
-    if (!session) {
-      throw new NotFoundException('Session not found');
-    }
-
-    const items = await this.sessionCandiesService.listBySession(id);
+    const session = await this.findSessionOrFail(id);
+    const summary = await this.sessionOrdersService.buildSessionSummary(id);
 
     return {
       id: session.id,
       status: session.status,
       total_sold: session.totalSold,
       date: session.date,
-      items: items.map((item) => ({
-        candy: item.candy.name,
-        price: item.candy.price,
-        quantity_sold: item.quantitySold,
-        subtotal: item.quantitySold * item.candy.price,
-      })),
+      items: summary.items,
     };
   }
 
-  async registerSale(sessionId: string, registerSaleDto: RegisterSaleDto) {
-    const session = await this.prisma.session.findUnique({ where: { id: sessionId } });
-
-    if (!session) {
-      throw new NotFoundException('Session not found');
-    }
-
+  async createOrder(sessionId: string, createSessionOrderDto: CreateSessionOrderDto) {
+    const session = await this.findSessionOrFail(sessionId);
     this.ensureSessionIsOpen(session.status);
 
-    await this.candiesService.findByIdOrFail(registerSaleDto.candy_id);
+    return this.sessionOrdersService.createOrder(sessionId, createSessionOrderDto);
+  }
 
-    return this.sessionCandiesService.registerSale(
-      sessionId,
-      registerSaleDto.candy_id,
-      registerSaleDto.quantity,
-    );
+  async listOrders(sessionId: string) {
+    await this.findSessionOrFail(sessionId);
+    return this.sessionOrdersService.listBySession(sessionId);
+  }
+
+  async deleteOrder(sessionId: string, orderId: string) {
+    const session = await this.findSessionOrFail(sessionId);
+    this.ensureSessionIsOpen(session.status);
+
+    await this.sessionOrdersService.deleteOrder(sessionId, orderId);
   }
 
   async closeSession(id: string) {
+    const session = await this.findSessionOrFail(id);
+    this.ensureSessionIsOpen(session.status);
+    const summary = await this.sessionOrdersService.buildSessionSummary(id);
+
+    return this.prisma.session.update({
+      where: { id },
+      data: {
+        status: SessionStatus.CLOSED,
+        totalSold: summary.totalSold,
+      },
+    });
+  }
+
+  private async findSessionOrFail(id: string) {
     const session = await this.prisma.session.findUnique({ where: { id } });
 
     if (!session) {
       throw new NotFoundException('Session not found');
     }
 
-    this.ensureSessionIsOpen(session.status);
-
-    const items = await this.sessionCandiesService.listBySession(id);
-    const totalSold = items.reduce(
-      (sum, item) => sum + item.quantitySold * item.candy.price,
-      0,
-    );
-
-    return this.prisma.session.update({
-      where: { id },
-      data: {
-        status: SessionStatus.CLOSED,
-        totalSold,
-      },
-    });
+    return session;
   }
 
   private ensureSessionIsOpen(status: SessionStatus) {

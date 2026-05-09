@@ -9,7 +9,7 @@ The API manages:
 - Users (`/users`)
 - Candies (`/candies`)
 - Sales sessions (`/sessions`)
-- Candy sales within a session (`SessionCandy` relation)
+- Session orders and order items (`SessionOrder` + `OrderCandy`)
 
 A session represents a selling period (event, shift, or sales day).
 
@@ -20,16 +20,18 @@ A session represents a selling period (event, shift, or sales day).
   - `status = OPEN`
   - `totalSold = 0`
   - `date = now`
-- Sales can be registered only while session is `OPEN`.
+- Orders can be created or deleted only while session is `OPEN`.
 - Closing a session:
-  - Computes `totalSold = SUM(quantitySold * candy.price)`
+  - Computes `totalSold = SUM(quantity * unitPriceSnapshot)`
   - Sets `status = CLOSED`
 - Closed sessions are immutable:
-  - Cannot add/update/remove sales
+  - Cannot create/delete orders
   - Cannot close again
   - Returns `403 Forbidden` with message `Session is already closed`
 - Candy price is stored in cents (e.g. `5.50 BRL => 550`).
-- `SessionCandy` has unique constraint on (`sessionId`, `candyId`) so repeated sales increment quantity instead of duplicating rows.
+- Each order can contain multiple candies.
+- `OrderCandy.unitPriceSnapshot` freezes the price used at the moment of sale.
+- `GET /sessions/:id` still returns aggregated `items` for compatibility, but aggregation now comes from order data.
 
 ## Tech Stack
 
@@ -45,7 +47,7 @@ A session represents a selling period (event, shift, or sales day).
 - `users`
 - `candies`
 - `sessions`
-- `session-candies`
+- `session-orders`
 - `prisma`
 - `common`
 
@@ -124,12 +126,22 @@ pnpm prisma:deploy
 - `status` enum: `OPEN | CLOSED`
 - `createdAt` datetime
 
-### SessionCandy
+### SessionOrder
 - `id` UUID
 - `sessionId` UUID FK
+- `createdAt` datetime
+- `registeredByUserId` UUID nullable
+
+### OrderCandy
+- `id` UUID
+- `sessionOrderId` UUID FK
 - `candyId` UUID FK
-- `quantitySold` integer
-- unique (`sessionId`, `candyId`)
+- `quantity` integer
+- `unitPriceSnapshot` integer (cents)
+
+Legacy note:
+- `SessionCandy` still exists in the schema as migration compatibility data.
+- New writes must use `SessionOrder` + `OrderCandy`.
 
 ## Main Endpoints
 
@@ -151,14 +163,48 @@ pnpm prisma:deploy
 - `GET /api/sessions?status=OPEN|CLOSED`
 - `GET /api/sessions/open/current`
 - `GET /api/sessions/:id`
-- `POST /api/sessions/:id/sales`
+- `POST /api/sessions/:id/orders`
+- `GET /api/sessions/:id/orders`
+- `DELETE /api/sessions/:sessionId/orders/:orderId`
 - `PATCH /api/sessions/:id/close`
+
+### Order Request Example
+
+```json
+{
+  "items": [
+    { "candy_id": "uuid-1", "quantity": 5 },
+    { "candy_id": "uuid-2", "quantity": 3 }
+  ]
+}
+```
+
+### Order Response Example
+
+```json
+{
+  "id": "order-uuid",
+  "session_id": "session-uuid",
+  "created_at": "2026-05-09T15:00:00.000Z",
+  "total": 3400,
+  "items": [
+    {
+      "candy_id": "uuid-1",
+      "candy": "Chocolate",
+      "quantity": 5,
+      "unit_price": 500,
+      "subtotal": 2500
+    }
+  ]
+}
+```
 
 ## Validation Rules
 
 Implemented with `class-validator`:
 - `quantity > 0`
 - `price > 0`
+- order `items` must contain at least one entry
 - UUID validation where applicable
 - email validation
 - password minimum length `6`
@@ -187,10 +233,12 @@ Current unit tests include:
 - `CandiesService` (create/update/duplicate protection/delete protection)
 - `SessionsService`:
   - single open session rule
-  - sale quantity increment behavior
-  - close session total calculation
+  - multi-item order creation
+  - order deletion protection on closed sessions
+  - close session total calculation from order data
+  - historical price snapshot stability
   - closed session protections
-  - session detail subtotals
+  - session detail aggregation
 
 Run:
 

@@ -28,6 +28,7 @@ model Candy {
   price          Int
   createdAt      DateTime       @default(now()) @map("created_at")
   sessionCandies SessionCandy[]
+  orderCandies   OrderCandy[]
 
   @@map("candies")
 }
@@ -39,6 +40,7 @@ model Session {
   status         SessionStatus
   createdAt      DateTime       @default(now()) @map("created_at")
   sessionCandies SessionCandy[]
+  sessionOrders  SessionOrder[]
 
   @@map("sessions")
 }
@@ -53,4 +55,27 @@ model SessionCandy {
 
   @@unique([sessionId, candyId])
   @@map("session_candies")
+}
+
+model SessionOrder {
+  id                 String       @id @default(uuid()) @db.Uuid
+  sessionId          String       @map("session_id") @db.Uuid
+  createdAt          DateTime     @default(now()) @map("created_at")
+  registeredByUserId String?      @map("registered_by_user_id") @db.Uuid
+  session            Session      @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  items              OrderCandy[]
+
+  @@map("session_orders")
+}
+
+model OrderCandy {
+  id                String       @id @default(uuid()) @db.Uuid
+  sessionOrderId    String       @map("session_order_id") @db.Uuid
+  candyId           String       @map("candy_id") @db.Uuid
+  quantity          Int
+  unitPriceSnapshot Int          @map("unit_price_snapshot")
+  sessionOrder      SessionOrder @relation(fields: [sessionOrderId], references: [id], onDelete: Restrict)
+  candy             Candy        @relation(fields: [candyId], references: [id], onDelete: Restrict)
+
+  @@map("order_candies")
 }

@@ -36,11 +36,12 @@ describe('CandiesService', () => {
 
   it('prevents deleting candies that exist in session history', async () => {
     const candy = await service.create({ name: 'Chocolate', price: 500 });
-    prisma.sessionCandiesRecords.push({
-      id: 'relation-1',
-      sessionId: 'session-1',
+    prisma.orderCandiesRecords.push({
+      id: 'order-candy-1',
+      sessionOrderId: 'order-1',
       candyId: candy.id,
-      quantitySold: 1,
+      quantity: 1,
+      unitPriceSnapshot: 500,
     });
 
     await expect(service.remove(candy.id)).rejects.toBeInstanceOf(BadRequestException);
